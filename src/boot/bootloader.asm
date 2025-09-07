@@ -1,22 +1,32 @@
-[BITS 32]
+[BITS 16]
+[ORG 0x7C00]
 
-DATA_SEG equ 0x10
-
-load32:
-  mov ax, DATA_SEG
+start:
+  cli
+  xor ax, ax
   mov ds, ax
   mov es, ax
-  mov fs, ax
-  mov gs, ax
   mov ss, ax
-  mov ebp, 0x00200000
-	mov esp, ebp
-  
-	; fast enable a20
-  in al, 0x92
-  or al, 2
-  out 0x92, al
-  
-	jmp $
+  mov sp, 0x7C00
+  sti
 
-	times 512-($- $$) db 0 ;
+  mov si, msg
+.print:
+  lodsb
+  test al, al
+  jz .hang
+  mov ah, 0x0E         ; BIOS teletype
+  mov bh, 0x00
+  mov bl, 0x07         ; light gray
+  int 0x10
+  jmp .print
+
+.hang:
+  cli
+  hlt
+  jmp .hang
+
+msg db "HollowOS stage 1 OK, hi from Shyybi", 0
+
+times 510-($-$$) db 0
+dw 0xAA55
