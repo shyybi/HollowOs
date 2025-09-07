@@ -12,7 +12,8 @@ void kernel_main(void) {
         vidptr[j+1] = 0x07; 		/* Light grey */
         j = j + 2;
     }
-
+    
+  j = 0;
   while(str[j] != '\0') {
     vidptr[i] = str[j];
     vidptr[i+1] = 0x07;
