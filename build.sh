@@ -40,7 +40,7 @@ build_bootloader() {
   mkdir -p "$OUT_DIR"
 
   # Strip leading '//' lines (e.g., '// filepath: ...') so NASM doesn't choke.
-  BOOT_ASM_IN="$SRC_DIR/bootloader.asm"
+  BOOT_ASM_IN="$SRC_DIR/boot/bootloader.asm"
   BOOT_ASM_PRE="$OUT_DIR/bootloader.pre.asm"
   BOOT_BIN="$OUT_DIR/bootloader.bin"
   BOOT_IMG="$OUT_DIR/boot.img"
@@ -80,17 +80,17 @@ build_kernel_optional() {
 		CFLAGS="-m32"
 	fi
 
-	KERNEL_C="$SRC_DIR/kernel.c"
+	KERNEL_C="$SRC_DIR/kernel/kernel.c"
 	KERNEL_O="$OUT_DIR/kernel.o"
 	KERNEL_BIN="$OUT_DIR/kernel.bin"
 	LINKER_LD="$SRC_DIR/linker.ld"
 
 	if [[ -f "$KERNEL_C" && -f "$LINKER_LD" ]]; then
-		"$CC" $CFLAGS -ffreestanding -c "$KERNEL_C" -o "$KERNEL_O"
+		"$CC" $CFLAGS -ffreestanding -I "$SRC_DIR/includes" -c "$KERNEL_C" -o "$KERNEL_O"
 		"$LD" -m elf_i386 -T "$LINKER_LD" -o "$KERNEL_BIN" "$KERNEL_O"
 		echo "Built kernel binary: $KERNEL_BIN"
 	elif [[ -f "$KERNEL_C" ]]; then
-		"$CC" $CFLAGS -ffreestanding -c "$KERNEL_C" -o "$KERNEL_O"
+		"$CC" $CFLAGS -ffreestanding -I "$SRC_DIR/includes" -c "$KERNEL_C" -o "$KERNEL_O"
 		echo "Built kernel object (not linked): $KERNEL_O"
 	else
 		echo "Note: kernel.c not found; skipping kernel build."
