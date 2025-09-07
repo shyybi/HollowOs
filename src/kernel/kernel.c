@@ -1,4 +1,4 @@
-#include "kernel.h"
+#include <kernel.h>
 
 void kernel_main(void) {
 	const char *str = "HollowOs";
@@ -15,7 +15,7 @@ void kernel_main(void) {
 
   while(str[j] != '\0') {
     vidptr[i] = str[j];
-  	vidptr[i+1] = 0x07;
+    vidptr[i+1] = 0x07;
     ++j;
     i = i + 2;
   }
