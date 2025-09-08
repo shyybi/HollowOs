@@ -22,3 +22,8 @@ void kernel_main(void) {
   }
   return;
 }
+
+void start(void){
+  kernel_main();
+  while(1);
+}

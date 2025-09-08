@@ -65,40 +65,68 @@ build_bootloader() {
 	dd if=/dev/zero of="$BOOT_IMG" bs=512 count=2880 2>/dev/null
 	dd if="$BOOT_BIN" of="$BOOT_IMG" bs=512 count=1 conv=notrunc 2>/dev/null
 
+  # Ajout du kernel à partir du secteur 2 (LBA 1)
+  KERNEL_BIN="$OUT_DIR/kernel.bin"
+  if [[ -f "$KERNEL_BIN" ]]; then
+    dd if="$KERNEL_BIN" of="$BOOT_IMG" bs=512 seek=1 conv=notrunc 2>/dev/null
+    echo "Kernel ajouté à l'image disque à partir du secteur 2."
+  else
+    echo "Attention : kernel.bin introuvable, image disque sans kernel."
+  fi
+
   echo "Built boot sector: $BOOT_BIN"
   echo "Bootable image:    $BOOT_IMG"
 }
 
 build_kernel_optional() {
-	# Detect compiler
-	if command -v i386-elf-gcc >/dev/null 2>&1; then
-		CC=i386-elf-gcc
-		LD=i386-elf-ld
-		CFLAGS=""
-	elif command -v x86_64-elf-gcc >/dev/null 2>&1; then
-		CC=x86_64-elf-gcc
-		LD=x86_64-elf-ld
-		CFLAGS="-m32"
-	else
-		echo "Note: no cross-compiler found; skipping kernel build."
-		return 0
-	fi
+  # Detect compiler
+  if command -v i386-elf-gcc >/dev/null 2>&1; then
+    CC=i386-elf-gcc
+    LD=i386-elf-ld
+    CFLAGS=""
+  elif command -v x86_64-elf-gcc >/dev/null 2>&1; then
+    CC=x86_64-elf-gcc
+    LD=x86_64-elf-ld
+    CFLAGS="-m32"
+  elif command -v gcc >/dev/null 2>&1; then
+    CC=gcc
+    LD=ld
+    CFLAGS="-m32"
+    echo "Info: using system gcc with -m32 for kernel build."
+  else
+    echo "Note: no suitable compiler found; skipping kernel build."
+    return 0
+  fi
 
-	KERNEL_C="$SRC_DIR/kernel/kernel.c"
-	KERNEL_O="$OUT_DIR/kernel.o"
-	KERNEL_BIN="$OUT_DIR/kernel.bin"
-	LINKER_LD="$SRC_DIR/linker.ld"
+  KERNEL_C="$SRC_DIR/kernel/kernel.c"
+  KERNEL_O="$OUT_DIR/kernel.o"
+  KERNEL_BIN="$OUT_DIR/kernel.bin"
+  LINKER_LD="$SRC_DIR/kernel/linker.ld"
 
-	if [[ -f "$KERNEL_C" && -f "$LINKER_LD" ]]; then
-		"$CC" $CFLAGS -ffreestanding -I "$SRC_DIR/includes" -c "$KERNEL_C" -o "$KERNEL_O"
-		"$LD" -m elf_i386 -T "$LINKER_LD" -o "$KERNEL_BIN" "$KERNEL_O"
-		echo "Built kernel binary: $KERNEL_BIN"
-	elif [[ -f "$KERNEL_C" ]]; then
-		"$CC" $CFLAGS -ffreestanding -I "$SRC_DIR/includes" -c "$KERNEL_C" -o "$KERNEL_O"
-		echo "Built kernel object (not linked): $KERNEL_O"
-	else
-		echo "Note: kernel.c not found; skipping kernel build."
-	fi
+  if [[ ! -f "$KERNEL_C" ]]; then
+    echo "Note: kernel.c not found; skipping kernel build."
+    return 0
+  fi
+
+  # Compile kernel.c to kernel.o
+  echo "Compiling kernel.c..."
+  "$CC" $CFLAGS -ffreestanding -fno-pic -nostdlib -I "$SRC_DIR/includes" -c "$KERNEL_C" -o "$KERNEL_O"
+  echo "Built kernel object: $KERNEL_O"
+
+  # Link kernel.o to kernel.bin if linker script exists
+  if [[ -f "$LINKER_LD" ]]; then
+    echo "Linking kernel.o to kernel.bin..."
+    "$LD" -m elf_i386 -T "$LINKER_LD" -o "$KERNEL_BIN" "$KERNEL_O"
+    echo "Built kernel binary: $KERNEL_BIN"
+  else
+    echo "Warning: linker script not found at $LINKER_LD"
+    echo "Creating simple kernel.bin from kernel.o..."
+    objcopy -O binary "$KERNEL_O" "$KERNEL_BIN" 2>/dev/null || {
+      echo "Error: failed to create kernel.bin. objcopy not available."
+      return 1
+    }
+    echo "Built kernel binary (without linker script): $KERNEL_BIN"
+  fi
 }
 
 run_qemu() {

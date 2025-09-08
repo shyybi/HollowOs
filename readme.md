@@ -19,4 +19,9 @@ By the way, you should take a look at <a href="docs/CONTRIBUTING.md">Contributin
 The installation tutorial is right there <a href="docs/INSTALL.md">Install.md</a> 
 
 <hr/>
+
+For any discussions or issues, please write in English. Thank you.
+
+<hr/>
+
 Thanks for the stars, thanks for believing in me. I’ll try to do my best.
