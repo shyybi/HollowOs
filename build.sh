@@ -78,54 +78,115 @@ build_bootloader() {
   echo "Bootable image:    $BOOT_IMG"
 }
 
-build_kernel_optional() {
-  # Detect compiler
+build_kernel() {
+  # Detect compiler for 32-bit kernel
   if command -v i386-elf-gcc >/dev/null 2>&1; then
     CC=i386-elf-gcc
     LD=i386-elf-ld
-    CFLAGS=""
+    OBJCOPY=i386-elf-objcopy
+    CFLAGS="-m32"
   elif command -v x86_64-elf-gcc >/dev/null 2>&1; then
     CC=x86_64-elf-gcc
     LD=x86_64-elf-ld
+    OBJCOPY=x86_64-elf-objcopy
     CFLAGS="-m32"
   elif command -v gcc >/dev/null 2>&1; then
     CC=gcc
     LD=ld
+    OBJCOPY=objcopy
     CFLAGS="-m32"
-    echo "Info: using system gcc with -m32 for kernel build."
+    echo "Info: using system gcc with -m32 for 32-bit kernel build."
   else
-    echo "Note: no suitable compiler found; skipping kernel build."
-    return 0
+    echo "Error: no suitable compiler found for kernel build."
+    return 1
   fi
 
+  # Vérifier que NASM est disponible
+  require_cmd "$NASM_BIN"
+
+  # Define source files and object files
+  KERNEL_ENTRY_ASM="$SRC_DIR/kernel/kernel_entry.asm"
   KERNEL_C="$SRC_DIR/kernel/kernel.c"
+  MEMORY_C="$SRC_DIR/memory/memory.c"
+  VGA_C="$SRC_DIR/drivers/vga.c"
+  
+  KERNEL_ENTRY_O="$OUT_DIR/kernel_entry.o"
   KERNEL_O="$OUT_DIR/kernel.o"
+  MEMORY_O="$OUT_DIR/memory.o"
+  VGA_O="$OUT_DIR/vga.o"
+  
   KERNEL_BIN="$OUT_DIR/kernel.bin"
   LINKER_LD="$SRC_DIR/kernel/linker.ld"
 
-  if [[ ! -f "$KERNEL_C" ]]; then
-    echo "Note: kernel.c not found; skipping kernel build."
-    return 0
+  # Common compiler flags for 32-bit kernel
+  COMMON_CFLAGS="$CFLAGS -ffreestanding -fno-pic -nostdlib -nostdinc -fno-builtin -fno-stack-protector -nostartfiles -nodefaultlibs -Wall -Wextra -Werror -I$SRC_DIR/includes"
+
+  mkdir -p "$OUT_DIR"
+
+  # Assembler kernel_entry.asm
+  if [[ -f "$KERNEL_ENTRY_ASM" ]]; then
+    echo "Assembling kernel_entry.asm..."
+    "$NASM_BIN" -f elf32 "$KERNEL_ENTRY_ASM" -o "$KERNEL_ENTRY_O"
+    echo "Built: $KERNEL_ENTRY_O"
+  else
+    echo "Error: kernel_entry.asm not found at $KERNEL_ENTRY_ASM"
+    return 1
   fi
 
-  # Compile kernel.c to kernel.o
-  echo "Compiling kernel.c..."
-  "$CC" $CFLAGS -ffreestanding -fno-pic -nostdlib -I "$SRC_DIR/includes" -c "$KERNEL_C" -o "$KERNEL_O"
-  echo "Built kernel object: $KERNEL_O"
+  # Compile kernel.c
+  if [[ -f "$KERNEL_C" ]]; then
+    echo "Compiling kernel.c..."
+    "$CC" $COMMON_CFLAGS -c "$KERNEL_C" -o "$KERNEL_O"
+    echo "Built: $KERNEL_O"
+  else
+    echo "Error: kernel.c not found at $KERNEL_C"
+    return 1
+  fi
 
-  # Link kernel.o to kernel.bin if linker script exists
+  # Compile memory.c
+  if [[ -f "$MEMORY_C" ]]; then
+    echo "Compiling memory.c..."
+    "$CC" $COMMON_CFLAGS -c "$MEMORY_C" -o "$MEMORY_O"
+    echo "Built: $MEMORY_O"
+  else
+    echo "Warning: memory.c not found, skipping..."
+  fi
+
+  # Compile vga.c if it exists
+  if [[ -f "$VGA_C" ]]; then
+    echo "Compiling vga.c..."
+    "$CC" $COMMON_CFLAGS -c "$VGA_C" -o "$VGA_O"
+    echo "Built: $VGA_O"
+  else
+    echo "Note: vga.c not found, skipping..."
+  fi
+
+  # Collect all object files (kernel_entry.o MUST be first)
+  OBJECT_FILES="$KERNEL_ENTRY_O $KERNEL_O"
+  [[ -f "$MEMORY_O" ]] && OBJECT_FILES="$OBJECT_FILES $MEMORY_O"
+  [[ -f "$VGA_O" ]] && OBJECT_FILES="$OBJECT_FILES $VGA_O"
+
+  # Link all object files to create kernel.bin
   if [[ -f "$LINKER_LD" ]]; then
-    echo "Linking kernel.o to kernel.bin..."
-    "$LD" -m elf_i386 -T "$LINKER_LD" -o "$KERNEL_BIN" "$KERNEL_O"
+    echo "Linking kernel with linker script..."
+    "$LD" -m elf_i386 -T "$LINKER_LD" -o "$KERNEL_BIN" $OBJECT_FILES
     echo "Built kernel binary: $KERNEL_BIN"
   else
     echo "Warning: linker script not found at $LINKER_LD"
-    echo "Creating simple kernel.bin from kernel.o..."
-    objcopy -O binary "$KERNEL_O" "$KERNEL_BIN" 2>/dev/null || {
-      echo "Error: failed to create kernel.bin. objcopy not available."
-      return 1
-    }
+    echo "Creating kernel.bin without linker script..."
+    
+    # Create a temporary ELF file first, then convert to binary
+    KERNEL_ELF="$OUT_DIR/kernel.elf"
+    "$LD" -m elf_i386 -Ttext 0x1000 --oformat elf32-i386 -o "$KERNEL_ELF" $OBJECT_FILES
+    "$OBJCOPY" -O binary "$KERNEL_ELF" "$KERNEL_BIN"
+    rm -f "$KERNEL_ELF"
     echo "Built kernel binary (without linker script): $KERNEL_BIN"
+  fi
+
+  # Display kernel size
+  if [[ -f "$KERNEL_BIN" ]]; then
+    KERNEL_SIZE=$(stat -c%s "$KERNEL_BIN" 2>/dev/null || wc -c < "$KERNEL_BIN")
+    echo "Kernel size: $KERNEL_SIZE bytes"
   fi
 }
 
@@ -138,12 +199,16 @@ run_qemu() {
   fi
   # Ensure permissive permissions (helps with some host setups)
   chmod u+rw,go+r "$BOOT_IMG" 2>/dev/null || true
+    echo "Starting QEMU with HollowOS..."
   "$QEMU_BIN" \
-	-drive file="$BOOT_IMG",format=raw,if=floppy,readonly=on \
+	-drive file="$BOOT_IMG",format=raw,if=floppy \
     -boot a \
-    -monitor stdio \
-    -no-reboot -no-shutdown || {
-    echo "Primary QEMU run failed; retrying with a temporary copy (read-only)..." >&2
+    -m 32M \
+    -serial mon:stdio \
+    -no-shutdown \
+    -no-reboot
+  wait || {
+    echo "Primary QEMU run failed; retrying with a temporary copy..." >&2
     TMP_IMG="$(mktemp -t hollowos.boot.XXXXXX.img)" || {
       echo "Failed to create temp image; aborting." >&2
       exit 1
@@ -151,10 +216,13 @@ run_qemu() {
     cp "$BOOT_IMG" "$TMP_IMG"
     chmod u+rw,go+r "$TMP_IMG" 2>/dev/null || true
     "$QEMU_BIN" \
-      -drive file="$TMP_IMG",format=raw,if=floppy,readonly=on,snapshot=on \
+      -drive file="$TMP_IMG",format=raw,if=floppy \
       -boot a \
-      -monitor stdio \
-      -no-reboot -no-shutdown; \
+      -m 32M \
+      -no-shutdown \
+      -serial mon:stdio \
+      -no-reboot &
+    wait
     status=$?; rm -f "$TMP_IMG"; exit $status
   }
 }
@@ -166,7 +234,7 @@ clean_build() {
 
 target="${1:-build}"
 case "$target" in
-  (build) build_bootloader; build_kernel_optional ;;
+  (build) build_kernel; build_bootloader ;;
   (run)   run_qemu ;;
   (clean) clean_build ;;
   (*)     usage; exit 1 ;;

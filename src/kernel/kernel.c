@@ -1,7 +1,7 @@
-#include <kernel.h>
+#include "../includes/kernel.h"
 
 void kernel_main(void) {
-	const char *str = "HollowOs";
+	const char *str = "HollowOs Kernel Loaded!";
 	char *vidptr = (char*)0xb8000; /* video mem */
 	unsigned int i = 0;
 	unsigned int j = 0;
@@ -20,10 +20,11 @@ void kernel_main(void) {
     ++j;
     i = i + 2;
   }
-  return;
-}
-
-void start(void){
-  kernel_main();
-  while(1);
+  
+  // loop 
+  for(;;) {
+   for(volatile int k = 0; k < 1000000; k++) {
+           __asm__ volatile ("nop");
+    }
+  }
 }

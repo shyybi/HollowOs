@@ -1,6 +1,6 @@
 #include <vga.h>
 
-vga_main()
+void vga_main()
 {
 	return;
 }
