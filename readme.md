@@ -1,4 +1,4 @@
-### We mooved to an organization ! : https://github.com/HollowOs
+### We moved into an organization! : https://github.com/Auri-OS
 
 
 <h1 align="center">
